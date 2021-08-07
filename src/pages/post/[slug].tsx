@@ -75,17 +75,17 @@ export default function Post({ post }: PostProps) {
             <span>{getReadingTime()} min</span>
           </div>
         </div>
-        <div>
+        <div className={styles.content}>
           {post.data.content.map(content => {
             return (
-              <>
+              <div key={content.heading}>
                 <h2>{content.heading}</h2>
                 <div
                   dangerouslySetInnerHTML={{
                     __html: RichText.asHtml(content.body),
                   }}
                 />
-              </>
+              </div>
             );
           })}
         </div>
