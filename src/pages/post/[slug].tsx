@@ -6,10 +6,12 @@ import { format } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 
 import { RichText } from 'prismic-dom';
+import Link from 'next/link';
 import { getPrismicClient } from '../../services/prismic';
 
 import commonStyles from '../../styles/common.module.scss';
 import styles from './post.module.scss';
+import Comments from '../../components/Comments';
 
 interface Post {
   first_publication_date: string | null;
@@ -30,9 +32,24 @@ interface Post {
 
 interface PostProps {
   post: Post;
+  navigation: {
+    prevPost: {
+      uid: string;
+      data: {
+        title: string;
+      };
+    }[];
+    nextPost: {
+      uid: string;
+      data: {
+        title: string;
+      };
+    }[];
+  };
+  preview: boolean;
 }
 
-export default function Post({ post }: PostProps) {
+export default function Post({ post, navigation, preview }: PostProps) {
   const router = useRouter();
 
   if (router.isFallback) {
@@ -51,7 +68,7 @@ export default function Post({ post }: PostProps) {
   }
 
   return (
-    <main className={commonStyles.container}>
+    <article className={commonStyles.container}>
       <div className={styles.banner}>
         <img src={post.data.banner.url} alt="banner" />
       </div>
@@ -89,8 +106,34 @@ export default function Post({ post }: PostProps) {
             );
           })}
         </div>
+        <div className={styles.navigation}>
+          {navigation.prevPost.length > 0 && (
+            <Link href={`/post/${navigation.prevPost[0].uid}`}>
+              <a>
+                <h3>{navigation.prevPost[0].data.title}</h3>
+                <p>Post anterior</p>
+              </a>
+            </Link>
+          )}
+          {navigation.nextPost.length > 0 && (
+            <Link href={`/post/${navigation.nextPost[0].uid}`}>
+              <a>
+                <h3>{navigation.nextPost[0].data.title}</h3>
+                <p>Próximo post</p>
+              </a>
+            </Link>
+          )}
+        </div>
+        <Comments />
+        {preview && (
+          <aside>
+            <Link href="/api/exit-preview">
+              <a className={commonStyles.preview}>Sair do modo Preview</a>
+            </Link>
+          </aside>
+        )}
       </div>
-    </main>
+    </article>
   );
 }
 
@@ -114,36 +157,64 @@ export const getStaticPaths: GetStaticPaths = async () => {
   };
 };
 
-export const getStaticProps: GetStaticProps = async context => {
-  const { slug } = context.params;
-
+export const getStaticProps: GetStaticProps = async ({
+  params,
+  preview = false,
+  previewData,
+}) => {
   const prismic = getPrismicClient();
-  const response = await prismic.getByUID('po', String(slug), {});
+  const { slug } = params;
+  const response = await prismic.getByUID('po', String(slug), {
+    ref: previewData?.ref || null,
+  });
 
-  // const post = {
-  //   slug: response.uid,
-  //   first_publication_date: response.first_publication_date,
-  //   data: {
-  //     title: response.data.title,
-  //     subtitle: response.data.subtitle,
-  //     banner: {
-  //       url: response.data.banner.url,
-  //     },
-  //     author: response.data.author,
-  //     content: response.data.content.map(content => {
-  //       return {
-  //         body: [...content.body],
-  //         heading: content.heading,
-  //       };
-  //     }),
-  //   },
-  // };
-  // console.log(JSON.stringify(post));
+  const prevPost = await prismic.query(
+    [Prismic.Predicates.at('document.type', 'po')],
+    {
+      pageSize: 1,
+      after: response.id,
+      orderings: '[document.first_publication_date]',
+    }
+  );
 
+  const nextPost = await prismic.query(
+    [Prismic.Predicates.at('document.type', 'po')],
+    {
+      pageSize: 1,
+      after: response.id,
+      orderings: '[document.last_publication_date desc]',
+    }
+  );
+
+  const post = {
+    uid: response.uid,
+    first_publication_date: response.first_publication_date,
+    last_publication_date: response.last_publication_date,
+    data: {
+      title: response.data.title,
+      subtitle: response.data.subtitle,
+      author: response.data.author,
+      banner: {
+        url: response.data.banner.url,
+      },
+      content: response.data.content.map(content => {
+        return {
+          heading: content.heading,
+          body: [...content.body],
+        };
+      }),
+    },
+  };
+  console.log(nextPost);
   return {
     props: {
-      post: response,
+      post,
+      navigation: {
+        prevPost: prevPost?.results,
+        nextPost: nextPost?.results,
+      },
+      preview,
     },
-    revalidate: 60,
+    revalidate: 1800,
   };
 };
